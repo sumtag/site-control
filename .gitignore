@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local-disk file uploads (dev-only stand-in for Azure Blob Storage)
+/public/uploads
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
