@@ -11,6 +11,10 @@ export default async function DashboardPage({
   const { projectId } = await params;
   await requireMembership(projectId);
 
+  // Batched via $transaction rather than Promise.all: firing 10 independent
+  // queries concurrently exhausts the local dev database's connection_limit
+  // (see project memory) — the array form of $transaction sends them over a
+  // single connection instead of opening one per query.
   const [
     members,
     openRfis,
@@ -22,7 +26,7 @@ export default async function DashboardPage({
     recentActivity,
     overdueRfis,
     criticalDefects,
-  ] = await Promise.all([
+  ] = await prisma.$transaction([
     prisma.projectMember.findMany({
       where: { projectId },
       include: { user: { select: { name: true, email: true } } },
