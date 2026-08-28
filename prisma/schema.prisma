@@ -1,0 +1,459 @@
+// SITE CONTROL — Prisma schema
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =========================================================================
+// AUTH (Auth.js / NextAuth v5 — Prisma adapter shape)
+// =========================================================================
+
+enum AuthSource {
+  ENTRA
+  MAGIC_LINK
+}
+
+model User {
+  id            String      @id @default(cuid())
+  name          String?
+  email         String?     @unique
+  emailVerified DateTime?
+  image         String?
+  authSource    AuthSource?
+  createdAt     DateTime    @default(now())
+
+  accounts Account[]
+  sessions Session[]
+
+  memberships ProjectMember[]
+
+  createdDocuments      Document[]             @relation("DocumentCreatedBy")
+  createdDrawings       DrawingRevision[]      @relation("DrawingRevisionCreatedBy")
+  createdMarkups        Markup[]               @relation("MarkupCreatedBy")
+  raisedRfis            Rfi[]                  @relation("RfiRaisedBy")
+  respondedRfis         Rfi[]                  @relation("RfiRespondedBy")
+  rfiAttachments        RfiAttachment[]        @relation("RfiAttachmentUploadedBy")
+  createdSubmittals     Submittal[]            @relation("SubmittalCreatedBy")
+  reviewedSubmittals    Submittal[]            @relation("SubmittalReviewedBy")
+  raisedDefects         Defect[]               @relation("DefectRaisedBy")
+  defectPhotos          DefectPhoto[]          @relation("DefectPhotoUploadedBy")
+  createdCorrespondence Correspondence[]       @relation("CorrespondenceCreatedBy")
+  sentTransmittals      Transmittal[]          @relation("TransmittalSentBy")
+  transmittalRecipient  TransmittalRecipient[] @relation("TransmittalRecipientUser")
+  activity              ActivityLog[]          @relation("ActivityActedBy")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// Ad-hoc external sign-in (contractor/client staff not worth a formal Entra
+// B2B guest invite). Consumed once, short-lived. Sent via Graph, not SMTP.
+model LoginToken {
+  id        String    @id @default(cuid())
+  email     String
+  token     String    @unique
+  expires   DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// =========================================================================
+// PROJECTS & MEMBERSHIP
+// =========================================================================
+
+enum ProjectRole {
+  SUPERINTENDENT
+  CONTRACTOR
+  CLIENT
+}
+
+model Project {
+  id        String   @id @default(cuid())
+  name      String
+  number    String   @unique
+  createdAt DateTime @default(now())
+
+  members        ProjectMember[]
+  counters       Counter[]
+  documents      Document[]
+  drawings       Drawing[]
+  rfis           Rfi[]
+  submittals     Submittal[]
+  defects        Defect[]
+  correspondence Correspondence[]
+  transmittals   Transmittal[]
+  activity       ActivityLog[]
+}
+
+// A user's role is scoped to one project — the same person can be a
+// Contractor on one job and have no access at all to another.
+model ProjectMember {
+  id           String      @id @default(cuid())
+  projectId    String
+  userId       String
+  role         ProjectRole
+  organization String? // subcontractor / client company name, for display
+  invitedAt    DateTime    @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+}
+
+// Per-project, per-module auto-numbering (DOC-001, RFI-001, ...)
+model Counter {
+  id        String @id @default(cuid())
+  projectId String
+  type      String
+  value     Int    @default(0)
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, type])
+}
+
+// =========================================================================
+// DOCUMENTS
+// =========================================================================
+
+model Document {
+  id          String   @id @default(cuid())
+  projectId   String
+  number      String
+  title       String
+  category    String
+  revision    String
+  date        DateTime
+  author      String?
+  description String?
+  fileUrl     String?
+  fileName    String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("DocumentCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([projectId, number])
+}
+
+// =========================================================================
+// DRAWINGS + REVISIONS + MARKUPS
+// =========================================================================
+
+model Drawing {
+  id         String   @id @default(cuid())
+  projectId  String
+  number     String
+  title      String
+  discipline String
+  createdAt  DateTime @default(now())
+
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  revisions    DrawingRevision[]
+  transmittals Transmittal[]
+
+  @@unique([projectId, number])
+}
+
+enum RevisionStatus {
+  CURRENT
+  SUPERSEDED
+}
+
+model DrawingRevision {
+  id          String         @id @default(cuid())
+  drawingId   String
+  rev         String
+  date        DateTime
+  description String
+  status      RevisionStatus
+
+  // Original uploaded file (image or PDF) kept as source of truth.
+  sourceFileUrl  String?
+  sourceFileType String? // "image" | "pdf"
+
+  // Rasterized page the markup canvas actually draws over. For image
+  // uploads this equals the source; for PDF uploads it's a rendered page.
+  renderedImageUrl String?
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  drawing      Drawing       @relation(fields: [drawingId], references: [id], onDelete: Cascade)
+  createdBy    User          @relation("DrawingRevisionCreatedBy", fields: [createdById], references: [id])
+  markups      Markup[]
+  transmittals Transmittal[]
+
+  @@unique([drawingId, rev])
+}
+
+model Markup {
+  id                String   @id @default(cuid())
+  drawingRevisionId String
+  imageUrl          String
+  createdById       String
+  createdAt         DateTime @default(now())
+
+  drawingRevision DrawingRevision @relation(fields: [drawingRevisionId], references: [id], onDelete: Cascade)
+  createdBy       User            @relation("MarkupCreatedBy", fields: [createdById], references: [id])
+}
+
+// =========================================================================
+// RFIs
+// =========================================================================
+
+enum RfiPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model Rfi {
+  id            String      @id @default(cuid())
+  projectId     String
+  number        String
+  subject       String
+  question      String
+  discipline    String
+  priority      RfiPriority
+  raisedById    String
+  raisedDate    DateTime
+  dueDate       DateTime?
+  response      String?
+  respondedById String?
+  respondedDate DateTime?
+  closed        Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  raisedBy    User            @relation("RfiRaisedBy", fields: [raisedById], references: [id])
+  respondedBy User?           @relation("RfiRespondedBy", fields: [respondedById], references: [id])
+  attachments RfiAttachment[]
+
+  @@unique([projectId, number])
+}
+
+model RfiAttachment {
+  id           String   @id @default(cuid())
+  rfiId        String
+  name         String
+  fileUrl      String
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  rfi        Rfi  @relation(fields: [rfiId], references: [id], onDelete: Cascade)
+  uploadedBy User @relation("RfiAttachmentUploadedBy", fields: [uploadedById], references: [id])
+}
+
+// =========================================================================
+// SUBMITTALS
+// =========================================================================
+
+enum SubmittalStatus {
+  PENDING
+  APPROVED
+  RESUBMIT
+  REJECTED
+}
+
+model Submittal {
+  id            String          @id @default(cuid())
+  projectId     String
+  number        String
+  title         String
+  type          String
+  description   String?
+  submittedBy   String
+  dateSubmitted DateTime
+  reviewerRole  String // "Superintendent" | "Client" | "Architect" | ...
+  requiredBy    DateTime?
+  status        SubmittalStatus @default(PENDING)
+  comments      String?
+  reviewDate    DateTime?
+  reviewedById  String?
+  createdById   String
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy  User    @relation("SubmittalCreatedBy", fields: [createdById], references: [id])
+  reviewedBy User?   @relation("SubmittalReviewedBy", fields: [reviewedById], references: [id])
+
+  @@unique([projectId, number])
+}
+
+// =========================================================================
+// DEFECTS
+// =========================================================================
+
+enum DefectSeverity {
+  MINOR
+  MAJOR
+  CRITICAL
+}
+
+enum DefectStatus {
+  OPEN
+  PROGRESS
+  CLOSED
+}
+
+model Defect {
+  id          String         @id @default(cuid())
+  projectId   String
+  number      String
+  description String
+  location    String
+  severity    DefectSeverity
+  status      DefectStatus   @default(OPEN)
+  raisedById  String
+  raisedDate  DateTime
+  assignedTo  String
+  dueDate     DateTime?
+  remediation String?
+  closedDate  DateTime?
+  verifiedBy  String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  project  Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  raisedBy User          @relation("DefectRaisedBy", fields: [raisedById], references: [id])
+  photos   DefectPhoto[]
+
+  @@unique([projectId, number])
+}
+
+model DefectPhoto {
+  id           String   @id @default(cuid())
+  defectId     String
+  imageUrl     String
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  defect     Defect @relation(fields: [defectId], references: [id], onDelete: Cascade)
+  uploadedBy User   @relation("DefectPhotoUploadedBy", fields: [uploadedById], references: [id])
+}
+
+// =========================================================================
+// CORRESPONDENCE
+// =========================================================================
+
+enum CorrespondenceStatus {
+  ISSUED
+  ACTIONED
+  CLOSED
+}
+
+model Correspondence {
+  id          String               @id @default(cuid())
+  projectId   String
+  number      String
+  type        String
+  subject     String
+  fromText    String
+  toText      String
+  date        DateTime
+  body        String
+  status      CorrespondenceStatus @default(ISSUED)
+  createdById String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User    @relation("CorrespondenceCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([projectId, number])
+}
+
+// =========================================================================
+// TRANSMITTALS — permanent by construction: no update/delete route exists
+// for this table at any role, ever (contractual/liability record).
+// =========================================================================
+
+model Transmittal {
+  id                String   @id @default(cuid())
+  projectId         String
+  drawingId         String
+  drawingRevisionId String
+  sentById          String
+  sentAt            DateTime @default(now())
+  message           String?
+
+  project         Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  drawing         Drawing                @relation(fields: [drawingId], references: [id])
+  drawingRevision DrawingRevision        @relation(fields: [drawingRevisionId], references: [id])
+  sentBy          User                   @relation("TransmittalSentBy", fields: [sentById], references: [id])
+  recipients      TransmittalRecipient[]
+}
+
+model TransmittalRecipient {
+  id            String  @id @default(cuid())
+  transmittalId String
+  userId        String?
+  emailAddress  String
+  name          String?
+
+  transmittal Transmittal @relation(fields: [transmittalId], references: [id], onDelete: Cascade)
+  user        User?       @relation("TransmittalRecipientUser", fields: [userId], references: [id])
+}
+
+// =========================================================================
+// ACTIVITY FEED
+// =========================================================================
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  projectId String
+  type      String // documents | drawings | rfis | submittals | defects | correspondence | transmittals
+  refNumber String
+  title     String
+  action    String
+  actedById String
+  createdAt DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  actedBy User    @relation("ActivityActedBy", fields: [actedById], references: [id])
+}
