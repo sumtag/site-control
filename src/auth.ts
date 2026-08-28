@@ -25,6 +25,15 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             clientId: process.env.AUTH_MICROSOFT_ENTRA_ID_ID,
             clientSecret: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
             issuer: process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER,
+            // A Superintendent can add a team member to a project by email
+            // before that person has ever signed in (see team/actions.ts),
+            // which pre-creates a User row with just their email. This flag
+            // lets their first real Entra sign-in attach to that same row
+            // instead of erroring or creating a duplicate. Safe here because
+            // emails only enter the system via an already-authenticated
+            // Superintendent, not public self-signup — not the scenario this
+            // flag's name is warning about.
+            allowDangerousEmailAccountLinking: true,
           }),
         ]
       : []),

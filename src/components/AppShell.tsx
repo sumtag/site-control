@@ -14,6 +14,7 @@ const MODULES = [
   { key: "submittals", label: "Submittals", num: "04" },
   { key: "defects", label: "Defect List", num: "05" },
   { key: "correspondence", label: "Correspondence", num: "06" },
+  { key: "team", label: "Team", num: "07" },
 ];
 
 export default function AppShell({

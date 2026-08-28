@@ -137,6 +137,18 @@ model ProjectMember {
   organization String? // subcontractor / client company name, for display
   invitedAt    DateTime    @default(now())
 
+  // Per-member email notification preferences for this project. Personal —
+  // each member edits their own, not something another role sets for them.
+  // No delivery mechanism exists yet (blocked on Entra/Graph Mail.Send); this
+  // is real data ready to drive it once that lands.
+  notifyOnDocuments      Boolean @default(true)
+  notifyOnDrawings       Boolean @default(true)
+  notifyOnRfis           Boolean @default(true)
+  notifyOnSubmittals     Boolean @default(true)
+  notifyOnDefects        Boolean @default(true)
+  notifyOnCorrespondence Boolean @default(true)
+  notifyOnTransmittals   Boolean @default(true)
+
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 

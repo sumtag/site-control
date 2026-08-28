@@ -1,6 +1,8 @@
 import { Prisma } from "@/generated/prisma/client";
 
 export type ActivityType =
+  | "project"
+  | "team"
   | "documents"
   | "drawings"
   | "rfis"
