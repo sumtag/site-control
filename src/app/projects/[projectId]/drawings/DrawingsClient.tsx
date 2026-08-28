@@ -3,12 +3,26 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 
 import Modal from "@/components/Modal";
+import FilePreviewLink from "@/components/FilePreviewLink";
 import { initialActionState } from "@/lib/action-state";
 import { TRANSMITTAL_REASONS, TRANSMITTAL_REASON_LABELS } from "@/lib/transmittal";
 import type { TransmittalReason } from "@/generated/prisma/client";
-import { addMarkup, addRevision, createDrawing, sendTransmittal } from "./actions";
+import {
+  addMarkup,
+  addRevision,
+  createDrawings,
+  sendBatchTransmittal,
+  sendTransmittal,
+} from "./actions";
 
 const DISCIPLINES = ["Architectural", "Structural", "Civil", "Mechanical", "Electrical", "Hydraulic", "Other"];
+
+function guessTitle(fileName: string): string {
+  return fileName
+    .replace(/\.[^.]+$/, "")
+    .replace(/[-_]+/g, " ")
+    .trim();
+}
 
 export type MarkupRow = { id: string; imageUrl: string; createdByLabel: string };
 export type TransmittalRow = {
@@ -59,12 +73,24 @@ export default function DrawingsClient({
   // submissions, so it needs to pick up the revalidated data automatically.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [batchTransmitOpen, setBatchTransmitOpen] = useState(false);
 
   const isSuper = currentRole === "SUPERINTENDENT";
   const filtered = drawings.filter((d) =>
     `${d.number} ${d.title} ${d.discipline}`.toLowerCase().includes(query.toLowerCase()),
   );
   const selected = selectedId ? (drawings.find((d) => d.id === selectedId) ?? null) : null;
+  const checkedDrawings = drawings.filter((d) => checked.has(d.id));
+
+  function toggleChecked(id: string) {
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   return (
     <>
@@ -79,7 +105,7 @@ export default function DrawingsClient({
           </a>
           {isSuper && (
             <button className="btn" onClick={() => setCreateOpen(true)}>
-              + New Drawing
+              + New Drawings
             </button>
           )}
         </div>
@@ -92,6 +118,17 @@ export default function DrawingsClient({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        {isSuper && checked.size > 0 && (
+          <>
+            <span style={{ fontSize: 13, color: "var(--ink-soft)" }}>{checked.size} selected</span>
+            <button className="btn sm" onClick={() => setBatchTransmitOpen(true)}>
+              Send Transmittal
+            </button>
+            <button className="btn ghost sm" onClick={() => setChecked(new Set())}>
+              Clear
+            </button>
+          </>
+        )}
       </div>
 
       {filtered.length === 0 ? (
@@ -117,6 +154,15 @@ export default function DrawingsClient({
                   }
                 }}
               >
+                {isSuper && (
+                  <input
+                    type="checkbox"
+                    checked={checked.has(d.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => toggleChecked(d.id)}
+                    style={{ marginRight: 2 }}
+                  />
+                )}
                 <div className="row-num mono">{d.number}</div>
                 <div className="row-main">
                   <div className="row-title">
@@ -136,7 +182,7 @@ export default function DrawingsClient({
       )}
 
       {createOpen && (
-        <CreateDrawingModal projectId={projectId} onClose={() => setCreateOpen(false)} />
+        <CreateDrawingsModal projectId={projectId} onClose={() => setCreateOpen(false)} />
       )}
 
       {selected && (
@@ -148,13 +194,27 @@ export default function DrawingsClient({
           onClose={() => setSelectedId(null)}
         />
       )}
+
+      {batchTransmitOpen && (
+        <BatchTransmittalModal
+          projectId={projectId}
+          drawings={checkedDrawings}
+          members={members}
+          onClose={() => setBatchTransmitOpen(false)}
+          onSent={() => {
+            setBatchTransmitOpen(false);
+            setChecked(new Set());
+          }}
+        />
+      )}
     </>
   );
 }
 
-function CreateDrawingModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
-  const action = createDrawing.bind(null, projectId);
+function CreateDrawingsModal({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const action = createDrawings.bind(null, projectId);
   const [state, formAction, pending] = useActionState(action, initialActionState);
+  const [files, setFiles] = useState<File[]>([]);
 
   useEffect(() => {
     if (state.ok) onClose();
@@ -164,29 +224,58 @@ function CreateDrawingModal({ projectId, onClose }: { projectId: string; onClose
   return (
     <Modal
       onClose={onClose}
-      title="New Drawing"
+      title="New Drawings"
+      wide
       footer={
         <>
           <button type="button" className="btn ghost" onClick={onClose}>
             Cancel
           </button>
           <button type="submit" form="drawing-create-form" className="btn" disabled={pending}>
-            {pending ? "Saving…" : "Register"}
+            {pending ? "Saving…" : files.length > 1 ? `Register ${files.length} Drawings` : "Register"}
           </button>
         </>
       }
     >
       <form id="drawing-create-form" action={formAction}>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="number">Drawing Number</label>
-            <input id="number" name="number" type="text" placeholder="e.g. A-101" required />
-          </div>
-          <div className="field">
-            <label htmlFor="title">Sheet Name</label>
-            <input id="title" name="title" type="text" required />
-          </div>
+        <div className="field">
+          <label htmlFor="files">Drawing Files</label>
+          <input
+            id="files"
+            name="files"
+            type="file"
+            accept="image/*,.pdf"
+            multiple
+            required
+            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
+          />
+          <div className="hint">Select one file per drawing — pick several at once to register a batch.</div>
         </div>
+
+        {files.length > 0 && (
+          <div className="field">
+            <label>Drawing Number / Sheet Name</label>
+            {files.map((f, i) => (
+              <div className="field-row" key={`${i}-${f.name}`} style={{ marginBottom: 8 }}>
+                <input
+                  name={`number-${i}`}
+                  type="text"
+                  placeholder="e.g. A-101"
+                  aria-label={`Drawing number for ${f.name}`}
+                  required
+                />
+                <input
+                  name={`title-${i}`}
+                  type="text"
+                  defaultValue={guessTitle(f.name)}
+                  aria-label={`Sheet name for ${f.name}`}
+                  required
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="field-row">
           <div className="field">
             <label htmlFor="discipline">Discipline</label>
@@ -203,25 +292,101 @@ function CreateDrawingModal({ projectId, onClose }: { projectId: string; onClose
             <input id="rev" name="rev" type="text" defaultValue="A" required />
           </div>
         </div>
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="date">Date</label>
-            <input
-              id="date"
-              name="date"
-              type="date"
-              defaultValue={new Date().toISOString().slice(0, 10)}
-              required
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="file">File</label>
-            <input id="file" name="file" type="file" accept="image/*,.pdf" required />
-          </div>
+        <div className="field">
+          <label htmlFor="date">Date</label>
+          <input
+            id="date"
+            name="date"
+            type="date"
+            defaultValue={new Date().toISOString().slice(0, 10)}
+            required
+          />
         </div>
         <div className="field">
           <label htmlFor="description">Revision Description</label>
           <textarea id="description" name="description" rows={3} required />
+          <div className="hint">Applies to every drawing in this batch.</div>
+        </div>
+        {state.error && <p style={{ color: "var(--red)", fontSize: 13 }}>{state.error}</p>}
+      </form>
+    </Modal>
+  );
+}
+
+function BatchTransmittalModal({
+  projectId,
+  drawings,
+  members,
+  onClose,
+  onSent,
+}: {
+  projectId: string;
+  drawings: DrawingRow[];
+  members: ProjectMemberOption[];
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const action = sendBatchTransmittal.bind(null, projectId);
+  const [state, formAction, pending] = useActionState(action, initialActionState);
+
+  useEffect(() => {
+    if (state.ok) onSent();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
+
+  return (
+    <Modal
+      onClose={onClose}
+      title={`Send Transmittal — ${drawings.length} Drawing${drawings.length === 1 ? "" : "s"}`}
+      wide
+      footer={
+        <>
+          <button type="button" className="btn ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" form="batch-transmittal-form" className="btn" disabled={pending}>
+            {pending ? "Sending…" : "Send"}
+          </button>
+        </>
+      }
+    >
+      <div className="field">
+        <label>Drawings</label>
+        <div className="hint">{drawings.map((d) => d.number).join(", ")}</div>
+      </div>
+      <form id="batch-transmittal-form" action={formAction}>
+        {drawings.map((d) => (
+          <input key={d.id} type="hidden" name="drawingIds" value={d.id} />
+        ))}
+        <div className="field">
+          <label htmlFor="batch-reason">Reason for Transmittal</label>
+          <select id="batch-reason" name="reason" defaultValue="FOR_INFORMATION">
+            {TRANSMITTAL_REASONS.map((r) => (
+              <option key={r} value={r}>
+                {TRANSMITTAL_REASON_LABELS[r]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Recipients</label>
+          {members.map((m) => (
+            <label
+              key={m.userId}
+              style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, fontWeight: 400, textTransform: "none" }}
+            >
+              <input type="checkbox" name="memberIds" value={m.userId} />
+              {m.label}
+            </label>
+          ))}
+        </div>
+        <div className="field">
+          <label htmlFor="batch-extraEmails">Additional Emails</label>
+          <textarea id="batch-extraEmails" name="extraEmails" rows={2} placeholder="one per line" />
+        </div>
+        <div className="field">
+          <label htmlFor="batch-message">Message</label>
+          <textarea id="batch-message" name="message" rows={2} />
         </div>
         {state.error && <p style={{ color: "var(--red)", fontSize: 13 }}>{state.error}</p>}
       </form>
@@ -386,9 +551,11 @@ function RevisionItem({
       </div>
       <p style={{ fontSize: 13, margin: "8px 0" }}>{revision.description}</p>
       {revision.sourceFileUrl && (
-        <a href={revision.sourceFileUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>
-          View {revision.sourceFileType === "pdf" ? "PDF" : "file"}
-        </a>
+        <FilePreviewLink
+          url={revision.sourceFileUrl}
+          label={`View ${revision.sourceFileType === "pdf" ? "PDF" : "file"}`}
+          className="mono"
+        />
       )}
 
       {revision.markups.length > 0 && (

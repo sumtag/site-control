@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useState } from "react";
 
 import Modal from "@/components/Modal";
+import FilePreviewLink from "@/components/FilePreviewLink";
 import { initialActionState } from "@/lib/action-state";
 import { isCadFile } from "@/lib/cad";
 import { TRANSMITTAL_REASONS, TRANSMITTAL_REASON_LABELS } from "@/lib/transmittal";
@@ -234,9 +235,7 @@ function DocumentForm({
             <div className="detail-full">
               <div className="dt">File</div>
               <div className="dd">
-                <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
-                  {doc.fileName || "Download"}
-                </a>
+                <FilePreviewLink url={doc.fileUrl} label={doc.fileName || "Download"} />
               </div>
             </div>
           )}
