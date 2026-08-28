@@ -17,6 +17,7 @@
   --green-soft: #e4efe8;
   --line: #dadbd3;
   --line-soft: #e7e8e2;
+  --spiire-red: #e42313;
   --radius: 3px;
   --shadow: 0 1px 2px rgba(19, 33, 53, 0.06), 0 1px 1px rgba(19, 33, 53, 0.04);
   --shadow-lg: 0 8px 30px rgba(19, 33, 53, 0.18);
@@ -99,8 +100,17 @@ a {
   height: 100vh;
   z-index: 20;
 }
+.brand-strip {
+  padding: 18px 20px 0;
+  color: #fff;
+}
+.brand-strip svg {
+  height: 20px;
+  width: auto;
+  display: block;
+}
 .titleblock {
-  padding: 22px 20px 16px;
+  padding: 14px 20px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
 .titleblock .proj-label {
@@ -151,11 +161,11 @@ a {
 .sidenav button.active {
   background: var(--navy-2);
   color: #fff;
-  border-left-color: var(--amber);
+  border-left-color: var(--spiire-red);
 }
 .sidenav a.active .num,
 .sidenav button.active .num {
-  color: var(--amber);
+  color: var(--spiire-red);
 }
 .sidenav a:hover:not(.active),
 .sidenav button:hover:not(.active) {
@@ -462,7 +472,7 @@ a {
   justify-content: center;
   width: 20px;
   height: 20px;
-  background: var(--amber);
+  background: var(--spiire-red);
   color: #fff;
   font-family: var(--font-plex-mono), monospace;
   font-size: 10.5px;
@@ -839,6 +849,13 @@ a {
   box-shadow: var(--shadow-lg);
   padding: 32px 30px;
   text-align: center;
+}
+.login-card .logo-mark {
+  height: 30px;
+  width: auto;
+  color: var(--navy);
+  margin: 0 auto 14px;
+  display: block;
 }
 .login-card .brand {
   font-family: var(--font-oswald), sans-serif;

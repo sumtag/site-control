@@ -1,4 +1,5 @@
 import { signIn } from "@/auth";
+import SpiireLogo from "@/components/SpiireLogo";
 
 const DEMO_USERS = [
   { email: "super@example.com", label: "Superintendent" },
@@ -16,6 +17,7 @@ export default function LoginPage() {
   return (
     <div className="login-wrap">
       <div className="login-card">
+        <SpiireLogo className="logo-mark" />
         <div className="brand">Site Control</div>
         <div className="tag">Construction Document Control</div>
         {entraConfigured ? (

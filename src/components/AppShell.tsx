@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import SpiireLogo from "@/components/SpiireLogo";
+
 const MODULES = [
   { key: "dashboard", label: "Dashboard", num: "00" },
   { key: "documents", label: "Documents", num: "01" },
@@ -41,6 +43,9 @@ export default function AppShell({
   return (
     <div id="app">
       <div className={`sidebar ${sidebarOpen ? "open" : ""}`}>
+        <div className="brand-strip">
+          <SpiireLogo />
+        </div>
         <div className="titleblock">
           <div className="proj-label">Project</div>
           <h1>{projectName}</h1>
