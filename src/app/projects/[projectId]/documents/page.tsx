@@ -10,17 +10,36 @@ export default async function DocumentsPage({
   const { projectId } = await params;
   const membership = await requireMembership(projectId);
 
-  const documents = await prisma.document.findMany({
-    where: { projectId },
-    orderBy: { createdAt: "desc" },
-    include: { createdBy: { select: { name: true, email: true } } },
-  });
+  const [documents, members] = await Promise.all([
+    prisma.document.findMany({
+      where: { projectId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        createdBy: { select: { name: true, email: true } },
+        transmittals: {
+          orderBy: { sentAt: "desc" },
+          include: {
+            sentBy: { select: { name: true, email: true } },
+            recipients: true,
+          },
+        },
+      },
+    }),
+    prisma.projectMember.findMany({
+      where: { projectId },
+      include: { user: { select: { name: true, email: true } } },
+    }),
+  ]);
 
   return (
     <DocumentsClient
       projectId={projectId}
       currentUserId={membership.userId}
       currentRole={membership.role}
+      members={members.map((m) => ({
+        userId: m.userId,
+        label: m.user.name ?? m.user.email ?? "Unknown",
+      }))}
       documents={documents.map((d) => ({
         id: d.id,
         number: d.number,
@@ -34,6 +53,14 @@ export default async function DocumentsPage({
         fileName: d.fileName,
         createdById: d.createdById,
         createdByLabel: d.createdBy.name ?? d.createdBy.email ?? "Unknown",
+        transmittals: d.transmittals.map((t) => ({
+          id: t.id,
+          sentAt: t.sentAt.toISOString(),
+          sentByLabel: t.sentBy.name ?? t.sentBy.email ?? "Unknown",
+          reason: t.reason,
+          message: t.message,
+          recipients: t.recipients.map((rec) => rec.name ?? rec.emailAddress),
+        })),
       }))}
     />
   );

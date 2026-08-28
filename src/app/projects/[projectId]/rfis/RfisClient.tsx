@@ -59,9 +59,14 @@ export default function RfisClient({
           <h2>RFIs</h2>
           <p>Requests for Information — log, respond, attach markups.</p>
         </div>
-        <button className="btn" onClick={() => setCreateOpen(true)}>
-          + Raise RFI
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <a href={`/projects/${projectId}/rfis/register`} className="btn secondary">
+            Download Register
+          </a>
+          <button className="btn" onClick={() => setCreateOpen(true)}>
+            + Raise RFI
+          </button>
+        </div>
       </div>
 
       <div className="toolbar">

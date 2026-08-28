@@ -4,6 +4,8 @@ import { useActionState, useEffect, useRef, useState } from "react";
 
 import Modal from "@/components/Modal";
 import { initialActionState } from "@/lib/action-state";
+import { TRANSMITTAL_REASONS, TRANSMITTAL_REASON_LABELS } from "@/lib/transmittal";
+import type { TransmittalReason } from "@/generated/prisma/client";
 import { addMarkup, addRevision, createDrawing, sendTransmittal } from "./actions";
 
 const DISCIPLINES = ["Architectural", "Structural", "Civil", "Mechanical", "Electrical", "Hydraulic", "Other"];
@@ -13,6 +15,7 @@ export type TransmittalRow = {
   id: string;
   sentAt: string;
   sentByLabel: string;
+  reason: TransmittalReason;
   message: string | null;
   recipients: string[];
 };
@@ -70,11 +73,16 @@ export default function DrawingsClient({
           <h2>Drawing Register</h2>
           <p>Published drawings with full revision history and markup.</p>
         </div>
-        {isSuper && (
-          <button className="btn" onClick={() => setCreateOpen(true)}>
-            + New Drawing
-          </button>
-        )}
+        <div style={{ display: "flex", gap: 10 }}>
+          <a href={`/projects/${projectId}/drawings/register`} className="btn secondary">
+            Download Register
+          </a>
+          {isSuper && (
+            <button className="btn" onClick={() => setCreateOpen(true)}>
+              + New Drawing
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="toolbar">
@@ -169,9 +177,15 @@ function CreateDrawingModal({ projectId, onClose }: { projectId: string; onClose
       }
     >
       <form id="drawing-create-form" action={formAction}>
-        <div className="field">
-          <label htmlFor="title">Title</label>
-          <input id="title" name="title" type="text" required />
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="number">Drawing Number</label>
+            <input id="number" name="number" type="text" placeholder="e.g. A-101" required />
+          </div>
+          <div className="field">
+            <label htmlFor="title">Sheet Name</label>
+            <input id="title" name="title" type="text" required />
+          </div>
         </div>
         <div className="field-row">
           <div className="field">
@@ -406,6 +420,16 @@ function RevisionItem({
       {transmitting && (
         <form action={handleTransmit} style={{ marginTop: 10 }}>
           <div className="field">
+            <label htmlFor={`reason-${revision.id}`}>Reason for Transmittal</label>
+            <select id={`reason-${revision.id}`} name="reason" defaultValue="FOR_INFORMATION">
+              {TRANSMITTAL_REASONS.map((r) => (
+                <option key={r} value={r}>
+                  {TRANSMITTAL_REASON_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
             <label>Recipients</label>
             {members.map((m) => (
               <label key={m.userId} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, fontWeight: 400, textTransform: "none" }}>
@@ -442,7 +466,8 @@ function RevisionItem({
               <div className="dot" />
               <div style={{ flex: 1 }}>
                 <div className="txt">
-                  <b>{t.sentByLabel}</b> sent to {t.recipients.join(", ") || "no recipients"}
+                  <b>{t.sentByLabel}</b> sent {TRANSMITTAL_REASON_LABELS[t.reason]} to{" "}
+                  {t.recipients.join(", ") || "no recipients"}
                   {t.message ? ` — ${t.message}` : ""}
                 </div>
               </div>

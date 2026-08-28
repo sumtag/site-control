@@ -3,12 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { requireMembership } from "@/lib/authz";
+import { requireMembership, requireRole } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { nextNumber } from "@/lib/counters";
 import { logActivity } from "@/lib/activity";
 import { saveUploadedFile, isNonEmptyFile } from "@/lib/storage";
 import type { ActionState } from "@/lib/action-state";
+import type { TransmittalReason } from "@/generated/prisma/client";
 
 const documentSchema = z.object({
   title: z.string().trim().min(1, "Title is required"),
@@ -135,6 +136,81 @@ export async function updateDocument(
       refNumber: doc.number,
       title: parsed.data.title,
       action: "updated",
+      actedById: membership.userId,
+    });
+  });
+
+  revalidatePath(`/projects/${projectId}/documents`);
+  return { ok: true };
+}
+
+export async function sendDocumentTransmittal(
+  projectId: string,
+  documentId: string,
+  _prevState: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const membership = await requireMembership(projectId);
+  requireRole(membership, ["SUPERINTENDENT"]);
+
+  const doc = await prisma.document.findFirst({ where: { id: documentId, projectId } });
+  if (!doc) return { ok: false, error: "Document not found." };
+
+  const memberIds = formData.getAll("memberIds").map(String);
+  const extraEmailsRaw = String(formData.get("extraEmails") ?? "");
+  const extraEmails = extraEmailsRaw
+    .split(/[\n,]/)
+    .map((e) => e.trim())
+    .filter(Boolean);
+  const message = String(formData.get("message") ?? "").trim() || undefined;
+  const reason = String(formData.get("reason") ?? "") as TransmittalReason;
+
+  if (memberIds.length === 0 && extraEmails.length === 0) {
+    return { ok: false, error: "Select at least one recipient." };
+  }
+  if (!["FOR_TENDER", "FOR_CONSTRUCTION", "FOR_INFORMATION", "FOR_APPROVAL"].includes(reason)) {
+    return { ok: false, error: "Select a valid reason for transmittal." };
+  }
+
+  const members = memberIds.length
+    ? await prisma.projectMember.findMany({
+        where: { projectId, userId: { in: memberIds } },
+        include: { user: { select: { name: true, email: true } } },
+      })
+    : [];
+
+  await prisma.$transaction(async (tx) => {
+    const transmittal = await tx.documentTransmittal.create({
+      data: {
+        projectId,
+        documentId,
+        sentById: membership.userId,
+        reason,
+        message,
+      },
+    });
+    for (const m of members) {
+      if (!m.user.email) continue;
+      await tx.documentTransmittalRecipient.create({
+        data: {
+          documentTransmittalId: transmittal.id,
+          userId: m.userId,
+          emailAddress: m.user.email,
+          name: m.user.name,
+        },
+      });
+    }
+    for (const email of extraEmails) {
+      await tx.documentTransmittalRecipient.create({
+        data: { documentTransmittalId: transmittal.id, emailAddress: email },
+      });
+    }
+    await logActivity(tx, {
+      projectId,
+      type: "transmittals",
+      refNumber: doc.number,
+      title: doc.title,
+      action: "transmitted",
       actedById: membership.userId,
     });
   });

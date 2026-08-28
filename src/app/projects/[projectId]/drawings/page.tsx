@@ -72,6 +72,7 @@ export default async function DrawingsPage({
             id: t.id,
             sentAt: t.sentAt.toISOString(),
             sentByLabel: t.sentBy.name ?? t.sentBy.email ?? "Unknown",
+            reason: t.reason,
             message: t.message,
             recipients: t.recipients.map((rec) => rec.name ?? rec.emailAddress),
           })),

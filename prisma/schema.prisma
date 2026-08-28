@@ -33,20 +33,22 @@ model User {
 
   memberships ProjectMember[]
 
-  createdDocuments      Document[]             @relation("DocumentCreatedBy")
-  createdDrawings       DrawingRevision[]      @relation("DrawingRevisionCreatedBy")
-  createdMarkups        Markup[]               @relation("MarkupCreatedBy")
-  raisedRfis            Rfi[]                  @relation("RfiRaisedBy")
-  respondedRfis         Rfi[]                  @relation("RfiRespondedBy")
-  rfiAttachments        RfiAttachment[]        @relation("RfiAttachmentUploadedBy")
-  createdSubmittals     Submittal[]            @relation("SubmittalCreatedBy")
-  reviewedSubmittals    Submittal[]            @relation("SubmittalReviewedBy")
-  raisedDefects         Defect[]               @relation("DefectRaisedBy")
-  defectPhotos          DefectPhoto[]          @relation("DefectPhotoUploadedBy")
-  createdCorrespondence Correspondence[]       @relation("CorrespondenceCreatedBy")
-  sentTransmittals      Transmittal[]          @relation("TransmittalSentBy")
-  transmittalRecipient  TransmittalRecipient[] @relation("TransmittalRecipientUser")
-  activity              ActivityLog[]          @relation("ActivityActedBy")
+  createdDocuments             Document[]                     @relation("DocumentCreatedBy")
+  createdDrawings              DrawingRevision[]              @relation("DrawingRevisionCreatedBy")
+  createdMarkups               Markup[]                       @relation("MarkupCreatedBy")
+  raisedRfis                   Rfi[]                          @relation("RfiRaisedBy")
+  respondedRfis                Rfi[]                          @relation("RfiRespondedBy")
+  rfiAttachments               RfiAttachment[]                @relation("RfiAttachmentUploadedBy")
+  createdSubmittals            Submittal[]                    @relation("SubmittalCreatedBy")
+  reviewedSubmittals           Submittal[]                    @relation("SubmittalReviewedBy")
+  raisedDefects                Defect[]                       @relation("DefectRaisedBy")
+  defectPhotos                 DefectPhoto[]                  @relation("DefectPhotoUploadedBy")
+  createdCorrespondence        Correspondence[]               @relation("CorrespondenceCreatedBy")
+  sentTransmittals             Transmittal[]                  @relation("TransmittalSentBy")
+  transmittalRecipient         TransmittalRecipient[]         @relation("TransmittalRecipientUser")
+  sentDocumentTransmittals     DocumentTransmittal[]          @relation("DocumentTransmittalSentBy")
+  documentTransmittalRecipient DocumentTransmittalRecipient[] @relation("DocumentTransmittalRecipientUser")
+  activity                     ActivityLog[]                  @relation("ActivityActedBy")
 }
 
 model Account {
@@ -112,16 +114,17 @@ model Project {
   number    String   @unique
   createdAt DateTime @default(now())
 
-  members        ProjectMember[]
-  counters       Counter[]
-  documents      Document[]
-  drawings       Drawing[]
-  rfis           Rfi[]
-  submittals     Submittal[]
-  defects        Defect[]
-  correspondence Correspondence[]
-  transmittals   Transmittal[]
-  activity       ActivityLog[]
+  members              ProjectMember[]
+  counters             Counter[]
+  documents            Document[]
+  drawings             Drawing[]
+  rfis                 Rfi[]
+  submittals           Submittal[]
+  defects              Defect[]
+  correspondence       Correspondence[]
+  transmittals         Transmittal[]
+  documentTransmittals DocumentTransmittal[]
+  activity             ActivityLog[]
 }
 
 // A user's role is scoped to one project — the same person can be a
@@ -172,8 +175,9 @@ model Document {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  createdBy User    @relation("DocumentCreatedBy", fields: [createdById], references: [id])
+  project      Project               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy    User                  @relation("DocumentCreatedBy", fields: [createdById], references: [id])
+  transmittals DocumentTransmittal[]
 
   @@unique([projectId, number])
 }
@@ -413,13 +417,21 @@ model Correspondence {
 // for this table at any role, ever (contractual/liability record).
 // =========================================================================
 
+enum TransmittalReason {
+  FOR_TENDER
+  FOR_CONSTRUCTION
+  FOR_INFORMATION
+  FOR_APPROVAL
+}
+
 model Transmittal {
-  id                String   @id @default(cuid())
+  id                String            @id @default(cuid())
   projectId         String
   drawingId         String
   drawingRevisionId String
   sentById          String
-  sentAt            DateTime @default(now())
+  sentAt            DateTime          @default(now())
+  reason            TransmittalReason @default(FOR_INFORMATION)
   message           String?
 
   project         Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -438,6 +450,34 @@ model TransmittalRecipient {
 
   transmittal Transmittal @relation(fields: [transmittalId], references: [id], onDelete: Cascade)
   user        User?       @relation("TransmittalRecipientUser", fields: [userId], references: [id])
+}
+
+// Same permanent-record principle as Transmittal above, scoped to Documents
+// instead of Drawings — e.g. notifying the team a new .dwg/.12da has landed.
+model DocumentTransmittal {
+  id         String            @id @default(cuid())
+  projectId  String
+  documentId String
+  sentById   String
+  sentAt     DateTime          @default(now())
+  reason     TransmittalReason @default(FOR_INFORMATION)
+  message    String?
+
+  project    Project                        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  document   Document                       @relation(fields: [documentId], references: [id])
+  sentBy     User                           @relation("DocumentTransmittalSentBy", fields: [sentById], references: [id])
+  recipients DocumentTransmittalRecipient[]
+}
+
+model DocumentTransmittalRecipient {
+  id                    String  @id @default(cuid())
+  documentTransmittalId String
+  userId                String?
+  emailAddress          String
+  name                  String?
+
+  documentTransmittal DocumentTransmittal @relation(fields: [documentTransmittalId], references: [id], onDelete: Cascade)
+  user                User?               @relation("DocumentTransmittalRecipientUser", fields: [userId], references: [id])
 }
 
 // =========================================================================

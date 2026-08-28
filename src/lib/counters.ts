@@ -5,7 +5,6 @@ import { Prisma } from "@/generated/prisma/client";
 // is never handed out twice under concurrent creates.
 const PREFIXES = {
   documents: "DOC",
-  drawings: "DRW",
   rfis: "RFI",
   submittals: "SUB",
   defects: "DEF",

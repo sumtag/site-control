@@ -5,13 +5,14 @@ import { z } from "zod";
 
 import { requireMembership, requireRole } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
-import { nextNumber } from "@/lib/counters";
 import { logActivity } from "@/lib/activity";
 import { saveUploadedFile, isNonEmptyFile } from "@/lib/storage";
 import type { ActionState } from "@/lib/action-state";
+import type { TransmittalReason } from "@/generated/prisma/client";
 
 const drawingSchema = z.object({
-  title: z.string().trim().min(1, "Title is required"),
+  number: z.string().trim().min(1, "Drawing number is required"),
+  title: z.string().trim().min(1, "Sheet name is required"),
   discipline: z.string().trim().min(1, "Discipline is required"),
   rev: z.string().trim().min(1, "Revision is required"),
   date: z.string().min(1, "Date is required"),
@@ -31,6 +32,7 @@ export async function createDrawing(
   requireRole(membership, ["SUPERINTENDENT"]);
 
   const parsed = drawingSchema.safeParse({
+    number: formData.get("number"),
     title: formData.get("title"),
     discipline: formData.get("discipline"),
     rev: formData.get("rev"),
@@ -39,17 +41,23 @@ export async function createDrawing(
   });
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
 
+  const existing = await prisma.drawing.findUnique({
+    where: { projectId_number: { projectId, number: parsed.data.number } },
+  });
+  if (existing) {
+    return { ok: false, error: `Drawing number ${parsed.data.number} is already registered.` };
+  }
+
   const file = formData.get("file");
   if (!isNonEmptyFile(file)) return { ok: false, error: "A drawing file is required." };
   const saved = await saveUploadedFile(file);
   const kind = fileKind(file);
 
   await prisma.$transaction(async (tx) => {
-    const number = await nextNumber(tx, projectId, "drawings");
     const drawing = await tx.drawing.create({
       data: {
         projectId,
-        number,
+        number: parsed.data.number,
         title: parsed.data.title,
         discipline: parsed.data.discipline,
       },
@@ -70,7 +78,7 @@ export async function createDrawing(
     await logActivity(tx, {
       projectId,
       type: "drawings",
-      refNumber: number,
+      refNumber: parsed.data.number,
       title: parsed.data.title,
       action: "registered",
       actedById: membership.userId,
@@ -208,9 +216,13 @@ export async function sendTransmittal(
     .map((e) => e.trim())
     .filter(Boolean);
   const message = String(formData.get("message") ?? "").trim() || undefined;
+  const reason = String(formData.get("reason") ?? "") as TransmittalReason;
 
   if (memberIds.length === 0 && extraEmails.length === 0) {
     return { ok: false, error: "Select at least one recipient." };
+  }
+  if (!["FOR_TENDER", "FOR_CONSTRUCTION", "FOR_INFORMATION", "FOR_APPROVAL"].includes(reason)) {
+    return { ok: false, error: "Select a valid reason for transmittal." };
   }
 
   const members = memberIds.length
@@ -227,6 +239,7 @@ export async function sendTransmittal(
         drawingId,
         drawingRevisionId,
         sentById: membership.userId,
+        reason,
         message,
       },
     });

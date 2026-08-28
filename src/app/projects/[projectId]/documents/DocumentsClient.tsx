@@ -4,7 +4,10 @@ import { useActionState, useEffect, useState } from "react";
 
 import Modal from "@/components/Modal";
 import { initialActionState } from "@/lib/action-state";
-import { createDocument, updateDocument } from "./actions";
+import { isCadFile } from "@/lib/cad";
+import { TRANSMITTAL_REASONS, TRANSMITTAL_REASON_LABELS } from "@/lib/transmittal";
+import type { TransmittalReason } from "@/generated/prisma/client";
+import { createDocument, sendDocumentTransmittal, updateDocument } from "./actions";
 
 const CATEGORIES = [
   "Specification",
@@ -13,6 +16,17 @@ const CATEGORIES = [
   "Drawing Reference",
   "Other",
 ];
+
+export type DocTransmittalRow = {
+  id: string;
+  sentAt: string;
+  sentByLabel: string;
+  reason: TransmittalReason;
+  message: string | null;
+  recipients: string[];
+};
+
+export type ProjectMemberOption = { userId: string; label: string };
 
 export type DocRow = {
   id: string;
@@ -27,21 +41,29 @@ export type DocRow = {
   fileName: string | null;
   createdById: string;
   createdByLabel: string;
+  transmittals: DocTransmittalRow[];
 };
 
 export default function DocumentsClient({
   projectId,
   currentUserId,
   currentRole,
+  members,
   documents,
 }: {
   projectId: string;
   currentUserId: string;
   currentRole: string;
+  members: ProjectMemberOption[];
   documents: DocRow[];
 }) {
   const [createOpen, setCreateOpen] = useState(false);
-  const [selected, setSelected] = useState<DocRow | null>(null);
+  // Track the selected document by id and re-derive it from the latest
+  // `documents` prop on every render, rather than holding a point-in-time
+  // snapshot — the CAD transmittal section stays open across a "Notify
+  // Recipients" submission, so it needs to pick up the revalidated data
+  // automatically instead of showing stale history until reopened.
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const filtered = documents.filter((d) =>
@@ -49,6 +71,7 @@ export default function DocumentsClient({
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  const selected = selectedId ? (documents.find((d) => d.id === selectedId) ?? null) : null;
 
   return (
     <>
@@ -84,11 +107,11 @@ export default function DocumentsClient({
               key={d.id}
               role="button"
               tabIndex={0}
-              onClick={() => setSelected(d)}
+              onClick={() => setSelectedId(d.id)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  setSelected(d);
+                  setSelectedId(d.id);
                 }
               }}
             >
@@ -125,7 +148,9 @@ export default function DocumentsClient({
           }
           projectId={projectId}
           doc={selected}
-          onClose={() => setSelected(null)}
+          isSuper={currentRole === "SUPERINTENDENT"}
+          members={members}
+          onClose={() => setSelectedId(null)}
         />
       )}
     </>
@@ -136,11 +161,15 @@ function DocumentForm({
   mode,
   projectId,
   doc,
+  isSuper,
+  members,
   onClose,
 }: {
   mode: "create" | "edit" | "view";
   projectId: string;
   doc?: DocRow;
+  isSuper?: boolean;
+  members?: ProjectMemberOption[];
   onClose: () => void;
 }) {
   const action =
@@ -268,7 +297,7 @@ function DocumentForm({
           </div>
           <div className="field">
             <label htmlFor="file">File {doc?.fileName ? `(current: ${doc.fileName})` : ""}</label>
-            <input id="file" name="file" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx" />
+            <input id="file" name="file" type="file" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.12da" />
             <div className="hint">Optional. Leave blank to keep the existing file.</div>
           </div>
           {state.error && (
@@ -276,6 +305,117 @@ function DocumentForm({
           )}
         </form>
       )}
+
+      {doc && isCadFile(doc.fileName) && (
+        <DocumentTransmittalSection
+          projectId={projectId}
+          doc={doc}
+          isSuper={Boolean(isSuper)}
+          members={members ?? []}
+        />
+      )}
     </Modal>
+  );
+}
+
+function DocumentTransmittalSection({
+  projectId,
+  doc,
+  isSuper,
+  members,
+}: {
+  projectId: string;
+  doc: DocRow;
+  isSuper: boolean;
+  members: ProjectMemberOption[];
+}) {
+  const [notifying, setNotifying] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | undefined>();
+
+  async function handleSubmit(formData: FormData) {
+    setPending(true);
+    setError(undefined);
+    const result = await sendDocumentTransmittal(projectId, doc.id, initialActionState, formData);
+    setPending(false);
+    // Called directly from the submit flow (not an effect), so it's safe to
+    // update local UI state here once the action has actually resolved.
+    if (result.ok) setNotifying(false);
+    else setError(result.error);
+  }
+
+  return (
+    <>
+      <div className="divider" />
+      <div className="dt" style={{ marginBottom: 6 }}>
+        CAD File Change Notification
+      </div>
+
+      {isSuper && (
+        <div className="status-actions">
+          <button type="button" className="btn secondary sm" onClick={() => setNotifying((v) => !v)}>
+            {notifying ? "Cancel" : "Notify Recipients"}
+          </button>
+        </div>
+      )}
+
+      {notifying && (
+        <form action={handleSubmit} style={{ marginTop: 10 }}>
+          <div className="field">
+            <label htmlFor="doc-transmittal-reason">Reason for Transmittal</label>
+            <select id="doc-transmittal-reason" name="reason" defaultValue="FOR_INFORMATION">
+              {TRANSMITTAL_REASONS.map((r) => (
+                <option key={r} value={r}>
+                  {TRANSMITTAL_REASON_LABELS[r]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Recipients</label>
+            {members.map((m) => (
+              <label
+                key={m.userId}
+                style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, fontWeight: 400, textTransform: "none" }}
+              >
+                <input type="checkbox" name="memberIds" value={m.userId} />
+                {m.label}
+              </label>
+            ))}
+          </div>
+          <div className="field">
+            <label htmlFor="doc-transmittal-extraEmails">Additional Emails</label>
+            <textarea id="doc-transmittal-extraEmails" name="extraEmails" rows={2} placeholder="one per line" />
+          </div>
+          <div className="field">
+            <label htmlFor="doc-transmittal-message">Message</label>
+            <textarea id="doc-transmittal-message" name="message" rows={2} />
+          </div>
+          {error && <p style={{ color: "var(--red)", fontSize: 12 }}>{error}</p>}
+          <button type="submit" className="btn sm" disabled={pending}>
+            {pending ? "Sending…" : "Send"}
+          </button>
+        </form>
+      )}
+
+      {doc.transmittals.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="dt">Transmittal History</div>
+          {doc.transmittals.map((t) => (
+            <div key={t.id} className="activity-item">
+              <div className="dot" />
+              <div style={{ flex: 1 }}>
+                <div className="txt">
+                  <b>{t.sentByLabel}</b> sent {TRANSMITTAL_REASON_LABELS[t.reason]} to{" "}
+                  {t.recipients.join(", ") || "no recipients"}
+                  {t.message ? ` — ${t.message}` : ""}
+                </div>
+              </div>
+              <span className="ts">{new Date(t.sentAt).toLocaleDateString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
