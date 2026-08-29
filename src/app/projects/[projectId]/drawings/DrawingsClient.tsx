@@ -16,6 +16,12 @@ import {
 } from "./actions";
 
 const DISCIPLINES = ["Architectural", "Structural", "Civil", "Mechanical", "Electrical", "Hydraulic", "Other"];
+const REVISION_DESCRIPTIONS = [
+  "Issued for Approval",
+  "Issued for Tender",
+  "Issued for Construction",
+  "Issued for Information",
+];
 
 function guessTitle(fileName: string): string {
   return fileName
@@ -313,7 +319,13 @@ function CreateDrawingsModal({ projectId, onClose }: { projectId: string; onClos
                 </div>
                 <div className="field">
                   <label htmlFor={`description-${i}`}>Revision Description</label>
-                  <textarea id={`description-${i}`} name={`description-${i}`} rows={2} required />
+                  <select id={`description-${i}`} name={`description-${i}`} defaultValue={REVISION_DESCRIPTIONS[0]}>
+                    {REVISION_DESCRIPTIONS.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             ))}
@@ -493,7 +505,13 @@ function DrawingDetailModal({
             </div>
             <div className="field">
               <label htmlFor="rdescription">Description</label>
-              <textarea id="rdescription" name="description" rows={2} required />
+              <select id="rdescription" name="description" defaultValue={REVISION_DESCRIPTIONS[0]}>
+                {REVISION_DESCRIPTIONS.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
             </div>
             {revState.error && <p style={{ color: "var(--red)", fontSize: 13 }}>{revState.error}</p>}
           </form>
