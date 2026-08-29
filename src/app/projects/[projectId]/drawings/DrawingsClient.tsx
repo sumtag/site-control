@@ -253,60 +253,72 @@ function CreateDrawingsModal({ projectId, onClose }: { projectId: string; onClos
         </div>
 
         {files.length > 0 && (
-          <div className="field">
-            <label>Drawing Number / Sheet Name</label>
+          <>
+            <div className="hint" style={{ marginBottom: 10 }}>
+              Each drawing has its own number, sheet name, discipline, revision, date and
+              description — fields start pre-filled but every row is independent.
+            </div>
             {files.map((f, i) => (
-              <div className="field-row" key={`${i}-${f.name}`} style={{ marginBottom: 8 }}>
-                <input
-                  name={`number-${i}`}
-                  type="text"
-                  placeholder="e.g. A-101"
-                  aria-label={`Drawing number for ${f.name}`}
-                  required
-                />
-                <input
-                  name={`title-${i}`}
-                  type="text"
-                  defaultValue={guessTitle(f.name)}
-                  aria-label={`Sheet name for ${f.name}`}
-                  required
-                />
+              <div className="rev-log-item" key={`${i}-${f.name}`}>
+                <div className="rlh">
+                  <b style={{ fontSize: 12.5 }}>{f.name}</b>
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor={`number-${i}`}>Drawing Number</label>
+                    <input
+                      id={`number-${i}`}
+                      name={`number-${i}`}
+                      type="text"
+                      placeholder="e.g. A-101"
+                      required
+                    />
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`title-${i}`}>Sheet Name</label>
+                    <input
+                      id={`title-${i}`}
+                      name={`title-${i}`}
+                      type="text"
+                      defaultValue={guessTitle(f.name)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor={`discipline-${i}`}>Discipline</label>
+                    <select id={`discipline-${i}`} name={`discipline-${i}`} defaultValue={DISCIPLINES[0]}>
+                      {DISCIPLINES.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor={`rev-${i}`}>Revision</label>
+                    <input id={`rev-${i}`} name={`rev-${i}`} type="text" defaultValue="A" required />
+                  </div>
+                </div>
+                <div className="field">
+                  <label htmlFor={`date-${i}`}>Date</label>
+                  <input
+                    id={`date-${i}`}
+                    name={`date-${i}`}
+                    type="date"
+                    defaultValue={new Date().toISOString().slice(0, 10)}
+                    required
+                  />
+                </div>
+                <div className="field">
+                  <label htmlFor={`description-${i}`}>Revision Description</label>
+                  <textarea id={`description-${i}`} name={`description-${i}`} rows={2} required />
+                </div>
               </div>
             ))}
-          </div>
+          </>
         )}
-
-        <div className="field-row">
-          <div className="field">
-            <label htmlFor="discipline">Discipline</label>
-            <select id="discipline" name="discipline" defaultValue={DISCIPLINES[0]}>
-              {DISCIPLINES.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="rev">Revision</label>
-            <input id="rev" name="rev" type="text" defaultValue="A" required />
-          </div>
-        </div>
-        <div className="field">
-          <label htmlFor="date">Date</label>
-          <input
-            id="date"
-            name="date"
-            type="date"
-            defaultValue={new Date().toISOString().slice(0, 10)}
-            required
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="description">Revision Description</label>
-          <textarea id="description" name="description" rows={3} required />
-          <div className="hint">Applies to every drawing in this batch.</div>
-        </div>
         {state.error && <p style={{ color: "var(--red)", fontSize: 13 }}>{state.error}</p>}
       </form>
     </Modal>

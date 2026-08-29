@@ -10,21 +10,14 @@ import { saveUploadedFile, isNonEmptyFile } from "@/lib/storage";
 import type { ActionState } from "@/lib/action-state";
 import type { Prisma, TransmittalReason } from "@/generated/prisma/client";
 
-const batchSharedSchema = z.object({
-  discipline: z.string().trim().min(1, "Discipline is required"),
-  rev: z.string().trim().min(1, "Revision is required"),
-  date: z.string().min(1, "Date is required"),
-  description: z.string().trim().min(1, "Description is required"),
-});
-
 function fileKind(file: File): "image" | "pdf" {
   return file.type === "application/pdf" ? "pdf" : "image";
 }
 
-// Registers one or more drawings in a single submit — every file in the
-// picker gets its own number/sheet name but shares discipline, revision,
-// date and description, matching how a batch is normally issued together
-// (e.g. all Rev A, all for tender, same day).
+// Registers one or more drawings in a single submit — every file gets its
+// own number, sheet name, discipline, revision, date and description, since
+// a batch upload can easily mix disciplines or land on different revisions
+// (the form pre-fills sensible defaults per row, but each is independent).
 export async function createDrawings(
   projectId: string,
   _prevState: ActionState,
@@ -33,29 +26,37 @@ export async function createDrawings(
   const membership = await requireMembership(projectId);
   requireRole(membership, ["SUPERINTENDENT"]);
 
-  const parsedShared = batchSharedSchema.safeParse({
-    discipline: formData.get("discipline"),
-    rev: formData.get("rev"),
-    date: formData.get("date"),
-    description: formData.get("description"),
-  });
-  if (!parsedShared.success) return { ok: false, error: parsedShared.error.issues[0].message };
-
   const files = formData.getAll("files").filter(isNonEmptyFile);
   if (files.length === 0) return { ok: false, error: "At least one drawing file is required." };
 
-  const entries: { number: string; title: string; file: File }[] = [];
+  const entries: {
+    number: string;
+    title: string;
+    discipline: string;
+    rev: string;
+    date: string;
+    description: string;
+    file: File;
+  }[] = [];
   const seenNumbers = new Set<string>();
   for (let i = 0; i < files.length; i++) {
     const number = String(formData.get(`number-${i}`) ?? "").trim();
     const title = String(formData.get(`title-${i}`) ?? "").trim();
+    const discipline = String(formData.get(`discipline-${i}`) ?? "").trim();
+    const rev = String(formData.get(`rev-${i}`) ?? "").trim();
+    const date = String(formData.get(`date-${i}`) ?? "").trim();
+    const description = String(formData.get(`description-${i}`) ?? "").trim();
     if (!number) return { ok: false, error: `Drawing number is required for ${files[i].name}.` };
     if (!title) return { ok: false, error: `Sheet name is required for ${files[i].name}.` };
+    if (!discipline) return { ok: false, error: `Discipline is required for ${files[i].name}.` };
+    if (!rev) return { ok: false, error: `Revision is required for ${files[i].name}.` };
+    if (!date) return { ok: false, error: `Date is required for ${files[i].name}.` };
+    if (!description) return { ok: false, error: `Description is required for ${files[i].name}.` };
     if (seenNumbers.has(number)) {
       return { ok: false, error: `Drawing number ${number} is used twice in this batch.` };
     }
     seenNumbers.add(number);
-    entries.push({ number, title, file: files[i] });
+    entries.push({ number, title, discipline, rev, date, description, file: files[i] });
   }
 
   const existing = await prisma.drawing.findMany({
@@ -81,15 +82,15 @@ export async function createDrawings(
           projectId,
           number: e.number,
           title: e.title,
-          discipline: parsedShared.data.discipline,
+          discipline: e.discipline,
         },
       });
       await tx.drawingRevision.create({
         data: {
           drawingId: drawing.id,
-          rev: parsedShared.data.rev,
-          date: new Date(parsedShared.data.date),
-          description: parsedShared.data.description,
+          rev: e.rev,
+          date: new Date(e.date),
+          description: e.description,
           status: "CURRENT",
           sourceFileUrl: e.saved.url,
           sourceFileType: kind,
