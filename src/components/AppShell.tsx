@@ -45,9 +45,14 @@ export default function AppShell({
     <div id="app">
       <div className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand-strip">
-          <SpiireLogo />
+          <Link href="/projects" aria-label="All projects">
+            <SpiireLogo />
+          </Link>
         </div>
         <div className="titleblock">
+          <Link href="/projects" className="back-link">
+            ← All Projects
+          </Link>
           <div className="proj-label">Project</div>
           <h1>{projectName}</h1>
           <div className="proj-num mono">{projectNumber}</div>

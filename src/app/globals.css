@@ -113,6 +113,15 @@ a {
   padding: 14px 20px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
 }
+.titleblock .back-link {
+  display: block;
+  font-size: 11px;
+  color: #8fa9c4;
+  margin-bottom: 10px;
+}
+.titleblock .back-link:hover {
+  color: #fff;
+}
 .titleblock .proj-label {
   font-size: 10px;
   letter-spacing: 0.14em;
